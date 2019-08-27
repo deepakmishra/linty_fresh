@@ -6,11 +6,13 @@ from typing import Any, Dict  # noqa
 from linty_fresh.linters import (android, buck_unittest, checkstyle, mypy,
                                  passthrough, pmd, pylint, swiftlint,
                                  xcodebuild)
-from linty_fresh.reporters import github_reporter
+from linty_fresh.reporters import github_reporter, bitbucket_reporter
 from linty_fresh.storage.git_storage_engine import GitNotesStorageEngine
+from linty_fresh.reporters.bitbucket_reporter import HadLintErrorsException
 
 REPORTERS = {
     'github': github_reporter,
+    'bitbucket': bitbucket_reporter,
 }  # type: Dict[str, Any]
 
 LINTERS = {
@@ -46,7 +48,10 @@ def create_parser() -> argparse.ArgumentParser:
                         help='Delete stale linter comments.')
 
     for name, reporter in REPORTERS.items():
-        reporter.register_arguments(parser)
+        try:
+            reporter.register_arguments(parser)
+        except argparse.ArgumentError as e:
+            print(e)
     return parser
 
 
@@ -66,10 +71,12 @@ async def run_loop(args):
             args.linter, ','.join(list(LINTERS.keys()))
         ))
     linter = LINTERS[args.linter]
+
     for lint_file_path in args.files:
         with open(lint_file_path, 'r') as lint_file:
             problems.update(linter.parse(
                 lint_file.read(), **vars(args)))
+
     storage_engine = GitNotesStorageEngine('origin')
 
     awaitable_array = []
@@ -79,13 +86,13 @@ async def run_loop(args):
         existing_problems = await storage_engine.get_existing_problems()
         problems = problems.difference(existing_problems)
 
-    linter_name = args.linter_name or linter
+    linter_name = args.linter_name or args.linter
     awaitable_array.extend([reporter.report(linter_name, problems) for
                             reporter in
                             reporters])
     try:
         await asyncio.gather(*awaitable_array)
-    except github_reporter.HadLintErrorsException:
+    except HadLintErrorsException:
         sys.exit(1)
 
 

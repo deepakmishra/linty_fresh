@@ -26,6 +26,7 @@ setup(
         'flake8-import-order>=0.10',
         'flake8-quotes>=0.8.1',
         'pycodestyle>=2.0.0, <2.1.0',
+        'requests>=2.22.0',
     ],
     install_requires=[
         'aiohttp>=0.19.0, <3.0.0',
