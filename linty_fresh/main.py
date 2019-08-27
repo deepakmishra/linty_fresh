@@ -7,8 +7,8 @@ from linty_fresh.linters import (android, buck_unittest, checkstyle, mypy,
                                  passthrough, pmd, pylint, swiftlint,
                                  xcodebuild)
 from linty_fresh.reporters import github_reporter, bitbucket_reporter
-from linty_fresh.storage.git_storage_engine import GitNotesStorageEngine
 from linty_fresh.reporters.bitbucket_reporter import HadLintErrorsException
+from linty_fresh.storage.git_storage_engine import GitNotesStorageEngine
 
 REPORTERS = {
     'github': github_reporter,

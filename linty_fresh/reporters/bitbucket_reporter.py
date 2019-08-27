@@ -102,14 +102,17 @@ class BitbucketReporter(object):
 
     async def report(self, linter_name: str,
                      problems: List[GenericProblem]) -> None:
+
+        client_session = BitbucketClient(auth_token=self.auth_token)
+        # await self.delete_all_existing_pr_messages(client_session, linter_name)
+        # return
+
         if not problems:
             grouped_problems = {}
         elif isinstance(list(problems)[0], TestProblem):
             grouped_problems = TestProblem.group_by_group(problems)
         else:
             grouped_problems = Problem.group_by_path_and_line(problems)
-
-        client_session = BitbucketClient(auth_token=self.auth_token)
 
         (line_map, existing_messages) = await asyncio.gather(
             self.create_line_to_position_map(client_session),
@@ -256,6 +259,13 @@ Only reporting the first {2}.""".format(
             repo=self.repo,
             pr=self.pr))
 
+    def _get_commit_url(self) -> str:
+        return ('https://api.bitbucket.org/2.0/repositories/'
+                '{organization}/{repo}/commit/{commit}'.format(
+            organization=self.organization,
+            repo=self.repo,
+            commit=self.commit))
+
     def _get_issue_url(self) -> str:
         return ('https://api.bitbucket.org/2.0/repositories/'
                 '{organization}/{repo}/issues/{pr}/comments'.format(
@@ -270,12 +280,12 @@ Only reporting the first {2}.""".format(
             repo=self.repo,
             commit=self.commit))
 
-    def _get_delete_pr_comment_url(self, pull_request_id: int, comment_id: int) -> str:
+    def _get_delete_pr_comment_url(self, comment_id: int) -> str:
         return ('https://api.bitbucket.org/2.0/repositories/'
                 '{organization}/{repo}/pullrequests/{pull_request_id}/comments/{comment_id}'.format(
             organization=self.organization,
             repo=self.repo,
-            pull_request_id=pull_request_id,
+            pull_request_id=self.pr,
             comment_id=comment_id))
 
     async def get_existing_pr_messages(
@@ -297,6 +307,30 @@ Only reporting the first {2}.""".format(
                                          body))
 
         return existing_messages
+
+
+    async def delete_all_existing_pr_messages(
+            self, client_session: BitbucketClient, linter_name: str
+    ) -> None:
+        url = self._get_pr_url() + "?pagelen=100"
+        messages_json = await self._fetch_message_json_from_url(
+            client_session, url, linter_name)
+
+        awaitable_array = []
+
+        for comment in messages_json:
+            body = comment['content']['raw']
+            if not self._is_linter_message(body, linter_name):
+                continue
+            comment_id = comment['id']
+            url = self._get_delete_pr_comment_url(comment_id)
+            awaitable_array.append(asyncio.ensure_future(client_session.delete(url)))
+
+        responses = await asyncio.gather(
+            *awaitable_array
+        )  # type: List[requests.models.Response]
+        for response in responses:
+            response.close()
 
     @staticmethod
     async def _fetch_message_json_from_url(
